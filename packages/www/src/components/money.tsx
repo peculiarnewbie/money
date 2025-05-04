@@ -84,7 +84,7 @@ export default function MoneyComponent(props: {
                     </Select.Item>
                 )}
                 onChange={(value) => {
-                    const newCurrency = value;
+                    const newCurrency = value ?? "IDR";
                     console.log(newCurrency);
                     props.updateMoney(
                         { ...props.money, currency: newCurrency },
@@ -94,7 +94,7 @@ export default function MoneyComponent(props: {
             >
                 <Select.Trigger class="select__trigger" aria-label="Fruit">
                     <Select.Value class="select__value">
-                        {(state) => state.selectedOption()}
+                        {(state) => state.selectedOption() as Element}
                     </Select.Value>
                     {/* <Select.Icon class="select__icon">
                         <CaretSortIcon />

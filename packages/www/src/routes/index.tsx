@@ -70,7 +70,9 @@ function Index() {
             "https://api.frankfurter.dev/v1/latest?base=USD"
         );
         const json = await res.json();
-        const fetchedRates = Object.entries(json.rates);
+        const fetchedRates = Object.entries(
+            json.rates as Record<string, number>
+        );
         fetchedRates.push(["USD", 1]);
         return fetchedRates.filter(([currency]) =>
             currencies.includes(currency as Currency)
@@ -80,8 +82,10 @@ function Index() {
     const moneys = () => data()[0].moneys;
 
     const remainingMoney = () => {
+        const currentRates = rates();
+        if (!currentRates) return 0;
         const values = moneys().map((money) => {
-            const idr = getIdrValue(money, rates());
+            const idr = getIdrValue(money, currentRates);
             if (!money.selected) return 0;
             if (money.type === "income") return idr;
             return -idr;
@@ -115,6 +119,7 @@ function Index() {
             type: "income",
             amount: 50000,
             currency: "IDR",
+            selected: true,
         });
         setData([collection]);
         save();
@@ -141,7 +146,7 @@ function Index() {
                             index={index()}
                             updateMoney={updateMoney}
                             deleteMoney={deleteMoney}
-                            rates={rates()}
+                            rates={rates() ?? []}
                         />
                     )}
                 </For>
