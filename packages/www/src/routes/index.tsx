@@ -37,7 +37,7 @@ function getDataFromLocalStorage() {
             {
                 name: "gaji",
                 type: "income",
-                amount: 35000000,
+                amount: 3500000,
                 currency: "IDR",
                 selected: true,
             },
