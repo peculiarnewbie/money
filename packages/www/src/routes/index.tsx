@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { createResource, createSignal, For } from "solid-js";
+import { createResource, createSignal, For, Show } from "solid-js";
 import MoneyComponent from "../components/money";
 
 export const Route = createFileRoute("/")({
@@ -61,13 +61,14 @@ function Index() {
         getDataFromLocalStorage()
     );
 
-    // const [rates] = createResource(async () => {
-    //     const res = await fetch(
-    //         "https://api.frankfurter.dev/v1/latest?base=USD"
-    //     );
-    //     const json = await res.json();
-    //     return json.rates;
-    // });
+    const [rates] = createResource<Record<string, number>>(async () => {
+        const res = await fetch(
+            "https://api.frankfurter.dev/v1/latest?base=USD"
+        );
+        const json = await res.json();
+        console.log(json.rates);
+        return json.rates;
+    });
 
     console.log(data());
 
@@ -88,6 +89,17 @@ function Index() {
     return (
         <div class="p-2 w-full flex flex-col gap-2">
             <h3>{data()[0].id}</h3>
+
+            <div>rates:</div>
+            <Show when={rates()}>
+                <For each={currencies}>
+                    {(currency) => (
+                        <div>
+                            {currency}: {rates()[currency] ?? 1}
+                        </div>
+                    )}
+                </For>
+            </Show>
 
             <For each={moneys()}>
                 {(money, index) => (
