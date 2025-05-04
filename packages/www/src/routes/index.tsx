@@ -65,6 +65,8 @@ function Index() {
         getDataFromLocalStorage()
     );
 
+    const [exporting, setExporting] = createSignal(false);
+
     const [rates] = createResource<[string, number][]>(async () => {
         const res = await fetch(
             "https://api.frankfurter.dev/v1/latest?base=USD"
@@ -160,6 +162,25 @@ function Index() {
 
             <div>remaining budget:</div>
             <div>Rp. {remainingMoney()}</div>
+            <div class="justify-self-start w-80 text-start">
+                <Show
+                    when={exporting()}
+                    fallback={
+                        <button
+                            class="bg-green-300 p-2 rounded cursor-pointer"
+                            onClick={() => setExporting(true)}
+                        >
+                            export data
+                        </button>
+                    }
+                >
+                    <pre>{JSON.stringify(data(), null, 2)}</pre>
+                </Show>
+                <div class="text-xs text-neutral-400">
+                    this is only stored in local storage rn. better store it
+                    somwhere else if you want it saved
+                </div>
+            </div>
         </div>
     );
 }
