@@ -161,7 +161,7 @@ function Index() {
             </Show>
 
             <div>remaining budget:</div>
-            <div>Rp. {remainingMoney()}</div>
+            <div>Rp. {remainingMoney().toLocaleString()}</div>
             <div class="justify-self-start w-80 text-start">
                 <Show
                     when={exporting()}
