@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/solid-router";
 import { createResource, createSignal, For, Show } from "solid-js";
-import MoneyComponent from "../components/money";
+import MoneyComponent, { getIdrValue } from "../components/money";
 
 export const Route = createFileRoute("/")({
     component: Index,
@@ -15,6 +15,7 @@ export type Money = {
     type: "income" | "expense";
     amount: number;
     currency: Currency;
+    selected: boolean;
 };
 
 type Collection = {
@@ -38,18 +39,21 @@ function getDataFromLocalStorage() {
                 type: "income",
                 amount: 35000000,
                 currency: "IDR",
+                selected: true,
             },
             {
                 name: "yt premium",
                 type: "expense",
                 amount: 50000,
                 currency: "IDR",
+                selected: true,
             },
             {
                 name: "t3-chat",
                 type: "expense",
                 amount: 8,
                 currency: "USD",
+                selected: true,
             },
         ],
     };
@@ -61,18 +65,29 @@ function Index() {
         getDataFromLocalStorage()
     );
 
-    const [rates] = createResource<Record<string, number>>(async () => {
+    const [rates] = createResource<[string, number][]>(async () => {
         const res = await fetch(
             "https://api.frankfurter.dev/v1/latest?base=USD"
         );
         const json = await res.json();
-        console.log(json.rates);
-        return json.rates;
+        const fetchedRates = Object.entries(json.rates);
+        fetchedRates.push(["USD", 1]);
+        return fetchedRates.filter(([currency]) =>
+            currencies.includes(currency as Currency)
+        );
     });
 
-    console.log(data());
-
     const moneys = () => data()[0].moneys;
+
+    const remainingMoney = () => {
+        const values = moneys().map((money) => {
+            const idr = getIdrValue(money, rates());
+            if (!money.selected) return 0;
+            if (money.type === "income") return idr;
+            return -idr;
+        });
+        return values.reduce((a, b) => a + b, 0);
+    };
 
     const save = () => {
         localStorage.setItem("money", JSON.stringify(data()));
@@ -86,30 +101,60 @@ function Index() {
         save();
     };
 
+    const deleteMoney = (index: number) => {
+        const collection = data()[0];
+        collection.moneys.splice(index, 1);
+        setData([collection]);
+        save();
+    };
+
+    const addMoney = () => {
+        const collection = data()[0];
+        collection.moneys.push({
+            name: "example",
+            type: "income",
+            amount: 50000,
+            currency: "IDR",
+        });
+        setData([collection]);
+        save();
+    };
+
     return (
         <div class="p-2 w-full flex flex-col gap-2">
             <h3>{data()[0].id}</h3>
 
             <div>rates:</div>
             <Show when={rates()}>
-                <For each={currencies}>
-                    {(currency) => (
+                <For each={rates()}>
+                    {([currency, rate]) => (
                         <div>
-                            {currency}: {rates()[currency] ?? 1}
+                            {currency}: {rate}
                         </div>
                     )}
                 </For>
+
+                <For each={moneys()}>
+                    {(money, index) => (
+                        <MoneyComponent
+                            money={money}
+                            index={index()}
+                            updateMoney={updateMoney}
+                            deleteMoney={deleteMoney}
+                            rates={rates()}
+                        />
+                    )}
+                </For>
+                <button
+                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                    onClick={addMoney}
+                >
+                    moar money
+                </button>
             </Show>
 
-            <For each={moneys()}>
-                {(money, index) => (
-                    <MoneyComponent
-                        money={money}
-                        index={index()}
-                        updateMoney={updateMoney}
-                    />
-                )}
-            </For>
+            <div>remaining budget:</div>
+            <div>Rp. {remainingMoney()}</div>
         </div>
     );
 }

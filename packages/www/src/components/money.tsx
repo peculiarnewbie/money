@@ -3,12 +3,34 @@ import { currencies, type Money } from "../routes";
 import { Select } from "@kobalte/core/select";
 import { ToggleButton } from "@kobalte/core/toggle-button";
 
+export const getIdrValue = (money: Money, rates: [string, number][]) => {
+    if (!rates) return -1;
+    switch (money.currency) {
+        case "IDR":
+            return money.amount;
+        case "USD":
+            return Math.floor(
+                money.amount *
+                    rates.find(([currency]) => currency === "IDR")![1]
+            );
+        case "JPY":
+            return Math.floor(
+                (money.amount *
+                    rates.find(([currency]) => currency === "IDR")![1]) /
+                    rates.find(([currency]) => currency === "JPY")![1]
+            );
+    }
+};
+
 export default function MoneyComponent(props: {
     money: Money;
     index: number;
     updateMoney: (money: Money, index: number) => void;
+    deleteMoney: (index: number) => void;
+    rates: [string, number][];
 }) {
-    const [selected, setSelected] = createSignal(true);
+    const idrValue = () => getIdrValue(props.money, props.rates);
+
     return (
         <div
             class={`flex gap-2 items-center ${props.index % 2 === 0 ? "bg-gray-100" : ""} `}
@@ -16,8 +38,14 @@ export default function MoneyComponent(props: {
             <input
                 class="size-5"
                 type="checkbox"
-                checked={selected()}
-                onchange={() => setSelected(!selected())}
+                checked={props.money.selected}
+                onchange={(e) => {
+                    const newSelected = e.currentTarget.checked;
+                    props.updateMoney(
+                        { ...props.money, selected: newSelected },
+                        props.index
+                    );
+                }}
             />
             <input
                 type="text"
@@ -29,7 +57,17 @@ export default function MoneyComponent(props: {
                     )
                 }
             />
-            <input type="number" value={props.money.amount} />
+            <input
+                type="number"
+                value={props.money.amount}
+                onchange={(e) => {
+                    const newAmount = e.currentTarget.value;
+                    props.updateMoney(
+                        { ...props.money, amount: Number(newAmount) },
+                        props.index
+                    );
+                }}
+            />
             <Select
                 defaultValue={props.money.currency}
                 options={Array.from(currencies)}
@@ -45,6 +83,14 @@ export default function MoneyComponent(props: {
                         </Select.ItemIndicator> */}
                     </Select.Item>
                 )}
+                onChange={(value) => {
+                    const newCurrency = value;
+                    console.log(newCurrency);
+                    props.updateMoney(
+                        { ...props.money, currency: newCurrency },
+                        props.index
+                    );
+                }}
             >
                 <Select.Trigger class="select__trigger" aria-label="Fruit">
                     <Select.Value class="select__value">
@@ -82,6 +128,13 @@ export default function MoneyComponent(props: {
                     </Show>
                 )}
             </ToggleButton>
+            <div>Rp. {idrValue().toLocaleString()}</div>
+            <button
+                class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                onClick={() => props.deleteMoney(props.index)}
+            >
+                delete
+            </button>
         </div>
     );
 }
