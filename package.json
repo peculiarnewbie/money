@@ -1,0 +1,6 @@
+{
+    "name": "money",
+    "workspaces": [
+        "packages/*"
+    ]
+}
