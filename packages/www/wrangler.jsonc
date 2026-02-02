@@ -1,8 +1,13 @@
 {
-    "name": "money",
-    "compatibility_date": "2025-05-02",
-    "main": "worker/index.ts",
-    "assets": {
-        "not_found_handling": "single-page-application"
-    }
+  "name": "money",
+  "compatibility_date": "2026-01-01",
+  "main": "worker/index.ts",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "money",
+      "database_id": "56291943-9059-4b8f-8ed9-30e2e0c19245",
+      "remote": true,
+    },
+  ],
 }

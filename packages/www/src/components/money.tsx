@@ -1,4 +1,3 @@
-import { Show } from "solid-js";
 import { currencies, type Money } from "../routes";
 import { Select } from "@kobalte/core/select";
 import { ToggleButton } from "@kobalte/core/toggle-button";
@@ -28,28 +27,60 @@ export default function MoneyComponent(props: {
     updateMoney: (money: Money, index: number) => void;
     deleteMoney: (index: number) => void;
     rates: [string, number][];
+    selected?: boolean;
+    onToggleSelected?: () => void;
+    onConvertToMonthly?: () => void;
+    onConvertToLedger?: () => void;
 }) {
     const idrValue = () => getIdrValue(props.money, props.rates);
+    const idrDisplay = () => `Rp. ${idrValue().toLocaleString()}`;
+    const typeClass = () =>
+        props.money.type === "income" ? "income" : "expense";
+    const isSelected = () => props.selected ?? props.money.selected;
+    const toggleSelected = () => {
+        if (props.onToggleSelected) {
+            props.onToggleSelected();
+            return;
+        }
+        props.updateMoney(
+            { ...props.money, selected: !props.money.selected },
+            props.index
+        );
+    };
+    const toggleType = () => {
+        const newType = props.money.type === "income" ? "expense" : "income";
+        props.updateMoney({ ...props.money, type: newType }, props.index);
+    };
+    const closeMenu = (event: MouseEvent) => {
+        const details = (event.currentTarget as HTMLElement).closest(
+            "details"
+        ) as HTMLDetailsElement | null;
+        details?.removeAttribute("open");
+    };
 
     return (
-        <div
-            class={`flex gap-2 items-center ${props.index % 2 === 0 ? "bg-gray-100" : ""} `}
-        >
+        <div class={`ledger-row ${isSelected() ? "" : "is-muted"}`}>
+            <div class="index tabular cell-index">{props.index + 1}</div>
             <input
-                class="size-5"
                 type="checkbox"
-                checked={props.money.selected}
-                onchange={(e) => {
-                    const newSelected = e.currentTarget.checked;
-                    props.updateMoney(
-                        { ...props.money, selected: newSelected },
-                        props.index
-                    );
+                class="cell-select"
+                checked={isSelected()}
+                onMouseDown={(e) => {
+                    e.preventDefault();
+                    toggleSelected();
                 }}
+                onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        toggleSelected();
+                    }
+                }}
+                onClick={(e) => e.preventDefault()}
             />
             <input
                 type="text"
                 value={props.money.name}
+                class="cell-input cell-name"
                 onchange={(e) =>
                     props.updateMoney(
                         { ...props.money, name: e.currentTarget.value },
@@ -60,6 +91,7 @@ export default function MoneyComponent(props: {
             <input
                 type="number"
                 value={props.money.amount}
+                class="cell-input tabular amount cell-amount"
                 onchange={(e) => {
                     const newAmount = e.currentTarget.value;
                     props.updateMoney(
@@ -69,72 +101,92 @@ export default function MoneyComponent(props: {
                 }}
             />
             <Select
+                class="cell-currency"
                 defaultValue={props.money.currency}
                 options={Array.from(currencies)}
-                placeholder="select currency"
-                class="border p-2"
                 itemComponent={(props) => (
                     <Select.Item item={props.item} class="select__item">
-                        <Select.ItemLabel>
-                            {props.item.rawValue}
-                        </Select.ItemLabel>
-                        {/* <Select.ItemIndicator class="select__item-indicator">
-                            <CheckIcon />
-                        </Select.ItemIndicator> */}
+                        <Select.ItemLabel>{props.item.rawValue}</Select.ItemLabel>
                     </Select.Item>
                 )}
                 onChange={(value) => {
                     const newCurrency = value ?? "IDR";
-                    console.log(newCurrency);
                     props.updateMoney(
                         { ...props.money, currency: newCurrency },
                         props.index
                     );
                 }}
             >
-                <Select.Trigger class="select__trigger" aria-label="Fruit">
-                    <Select.Value class="select__value">
+                <Select.Trigger class="select__trigger" aria-label="Currency">
+                    <Select.Value>
                         {(state) => state.selectedOption() as Element}
                     </Select.Value>
-                    {/* <Select.Icon class="select__icon">
-                        <CaretSortIcon />
-                    </Select.Icon> */}
                 </Select.Trigger>
                 <Select.Portal>
-                    <Select.Content class="select__content bg-white">
-                        <Select.Listbox class="select__listbox flex flex-col gap-1 p-2" />
+                    <Select.Content class="select__content">
+                        <Select.Listbox class="select__listbox" />
                     </Select.Content>
                 </Select.Portal>
             </Select>
             <ToggleButton
                 pressed={props.money.type === "income"}
-                class={`${
-                    props.money.type === "income"
-                        ? "bg-green-300"
-                        : "bg-red-300"
-                } p-2 rounded cursor-pointer`}
-                onChange={() => {
-                    const newType =
-                        props.money.type === "income" ? "expense" : "income";
-                    props.updateMoney(
-                        { ...props.money, type: newType },
-                        props.index
-                    );
+                class={`type-toggle cell-type ${typeClass()}`}
+                onMouseDown={(e) => {
+                    e.preventDefault();
+                    toggleType();
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        toggleType();
+                    }
                 }}
             >
-                {(state) => (
-                    <Show when={state.pressed()} fallback={<div>expense</div>}>
-                        <div>income</div>
-                    </Show>
-                )}
+                {(state) => (state.pressed() ? "income" : "expense")}
             </ToggleButton>
-            <div>Rp. {idrValue().toLocaleString()}</div>
-            <button
-                class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-                onClick={() => props.deleteMoney(props.index)}
-            >
-                delete
-            </button>
+            <div class={`tabular amount cell-idr ${typeClass()}`}>
+                {idrDisplay()}
+            </div>
+            <div class="cell-actions">
+                <details class="row-menu">
+                    <summary class="row-menu-trigger" aria-label="Row actions">
+                        ...
+                    </summary>
+                    <div class="row-menu-list">
+                        {props.onConvertToMonthly ? (
+                            <button
+                                class="row-menu-item"
+                                onClick={(event) => {
+                                    props.onConvertToMonthly?.();
+                                    closeMenu(event);
+                                }}
+                            >
+                                to monthly
+                            </button>
+                        ) : null}
+                        {props.onConvertToLedger ? (
+                            <button
+                                class="row-menu-item"
+                                onClick={(event) => {
+                                    props.onConvertToLedger?.();
+                                    closeMenu(event);
+                                }}
+                            >
+                                to ledger
+                            </button>
+                        ) : null}
+                        <button
+                            class="row-menu-item is-danger"
+                            onClick={(event) => {
+                                props.deleteMoney(props.index);
+                                closeMenu(event);
+                            }}
+                        >
+                            delete
+                        </button>
+                    </div>
+                </details>
+            </div>
         </div>
     );
 }

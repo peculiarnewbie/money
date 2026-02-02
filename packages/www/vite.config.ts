@@ -11,4 +11,7 @@ export default defineConfig({
         tailwindcss(),
         cloudflare(),
     ],
+    server: {
+        allowedHosts: ["omarchy"],
+    },
 });
