@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/solid-router";
 import {
-    createEffect,
     createResource,
     createSignal,
     For,
@@ -39,6 +38,35 @@ const storageKeys = {
 };
 
 const currentMonthKey = () => new Date().toISOString().slice(0, 7);
+
+const monthKeyPattern = /^(\d{4})-(\d{1,2})$/;
+
+const shiftMonthKey = (value: string, delta: number) => {
+    const match = monthKeyPattern.exec(value);
+    if (!match) return currentMonthKey();
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) {
+        return currentMonthKey();
+    }
+    if (month < 1 || month > 12) return currentMonthKey();
+    let monthIndex = month - 1 + delta;
+    const yearDelta = Math.floor(monthIndex / 12);
+    monthIndex = ((monthIndex % 12) + 12) % 12;
+    const nextYear = year + yearDelta;
+    const nextMonth = String(monthIndex + 1).padStart(2, "0");
+    return `${nextYear}-${nextMonth}`;
+};
+
+const pruneEmptyMonths = (value: PerMonth) => {
+    const next: PerMonth = {};
+    for (const [month, items] of Object.entries(value)) {
+        if (Array.isArray(items) && items.length > 0) {
+            next[month] = items;
+        }
+    }
+    return next;
+};
 
 const readFromStorage = <T,>(key: string, fallback: T) => {
     const local = localStorage.getItem(key);
@@ -79,7 +107,13 @@ function getPerMonthFromLocalStorage() {
         storageKeys.perMonth,
         null
     );
-    if (perMonth && Object.keys(perMonth).length > 0) return perMonth;
+    if (perMonth && Object.keys(perMonth).length > 0) {
+        const pruned = pruneEmptyMonths(perMonth);
+        if (Object.keys(pruned).length !== Object.keys(perMonth).length) {
+            localStorage.setItem(storageKeys.perMonth, JSON.stringify(pruned));
+        }
+        return pruned;
+    }
 
     const legacy = localStorage.getItem("money");
     if (legacy) {
@@ -118,6 +152,24 @@ const newItemId = () =>
         ? crypto.randomUUID()
         : `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const normalizeMoney = (value: Partial<Money> | null | undefined): Money => {
+    const currency = currencies.includes(value?.currency as Currency)
+        ? (value?.currency as Currency)
+        : "IDR";
+    const type = value?.type === "income" ? "income" : "expense";
+    const amount = Number.isFinite(value?.amount) ? Number(value?.amount) : 0;
+    const name = typeof value?.name === "string" ? value.name : "item";
+    const selected = value?.selected === undefined ? true : !!value.selected;
+    return { name, type, amount, currency, selected };
+};
+
+const normalizeMonthlyItem = (
+    value: Partial<MonthlyItem> | null | undefined
+): MonthlyItem => ({
+    ...normalizeMoney(value),
+    id: typeof value?.id === "string" && value.id ? value.id : newItemId(),
+});
+
 function Index() {
     const [perMonth, setPerMonth] = createSignal<PerMonth>(
         getPerMonthFromLocalStorage()
@@ -129,6 +181,7 @@ function Index() {
         createSignal<MonthlyToggles>(getMonthlyTogglesFromLocalStorage());
     const [activeMonth, setActiveMonth] = createSignal(currentMonthKey());
     const [exporting, setExporting] = createSignal(false);
+    let importInputRef: HTMLInputElement | undefined;
 
     const [rates] = createResource<[string, number][]>(async () => {
         const res = await fetch(
@@ -159,16 +212,36 @@ function Index() {
         );
     };
 
-    createEffect(() => {
-        const month = activeMonth();
-        if (!perMonth()[month]) {
-            setPerMonth((prev) => {
-                const next = { ...prev, [month]: [] };
-                savePerMonth(next);
-                return next;
-            });
+    const goToPreviousMonth = () => {
+        setActiveMonth(shiftMonthKey(activeMonth(), -1));
+    };
+
+    const goToNextMonth = () => {
+        setActiveMonth(shiftMonthKey(activeMonth(), 1));
+    };
+
+    const deleteMonth = (month: string) => {
+        const confirmed = window.confirm(
+            `Delete all data for ${month}? This cannot be undone.`
+        );
+        if (!confirmed) return;
+        const nextPerMonth = { ...perMonth() };
+        if (month in nextPerMonth) {
+            delete nextPerMonth[month];
         }
-    });
+        savePerMonth(nextPerMonth);
+        setPerMonth(nextPerMonth);
+        setMonthlyToggles((prev) => {
+            if (!(month in prev)) return prev;
+            const { [month]: _removed, ...rest } = prev;
+            saveMonthlyToggles(rest);
+            return rest;
+        });
+        if (activeMonth() === month) {
+            const remaining = Object.keys(nextPerMonth).sort().reverse();
+            setActiveMonth(remaining[0] ?? currentMonthKey());
+        }
+    };
 
     const moneys = () => perMonth()[activeMonth()] ?? [];
     const isMonthlyEnabled = (id: string) =>
@@ -222,7 +295,12 @@ function Index() {
             const month = activeMonth();
             const nextMonth = [...(prev[month] ?? [])];
             nextMonth.splice(index, 1);
-            const next = { ...prev, [month]: nextMonth };
+            const next = { ...prev };
+            if (nextMonth.length > 0) {
+                next[month] = nextMonth;
+            } else {
+                delete next[month];
+            }
             savePerMonth(next);
             return next;
         });
@@ -305,7 +383,12 @@ function Index() {
         setPerMonth((prev) => {
             const nextMonth = [...(prev[month] ?? [])];
             nextMonth.splice(index, 1);
-            const next = { ...prev, [month]: nextMonth };
+            const next = { ...prev };
+            if (nextMonth.length > 0) {
+                next[month] = nextMonth;
+            } else {
+                delete next[month];
+            }
             savePerMonth(next);
             return next;
         });
@@ -364,16 +447,87 @@ function Index() {
         remainingMoney() >= 0 ? "income" : "expense";
     const monthlyTotalClass = () =>
         monthlyTotal() >= 0 ? "income" : "expense";
-    const monthOptions = () => {
-        const keys = new Set(Object.keys(perMonth()));
-        keys.add(activeMonth());
-        return Array.from(keys).sort().reverse();
-    };
+    const monthOptions = () => Object.keys(perMonth()).sort().reverse();
+    const hasActiveMonth = () =>
+        Object.prototype.hasOwnProperty.call(perMonth(), activeMonth());
     const exportData = () => ({
         perMonth: perMonth(),
         monthly: monthlyItems(),
         monthlyToggles: monthlyToggles(),
     });
+
+    const exportJson = () => {
+        const payload = JSON.stringify(exportData(), null, 2);
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const stamp = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = `money-export-${stamp}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const openImport = () => {
+        importInputRef?.click();
+    };
+
+    const applyImportedData = (data: {
+        perMonth?: unknown;
+        monthly?: unknown;
+        monthlyToggles?: unknown;
+    }) => {
+        const nextPerMonth: PerMonth = {};
+        if (data.perMonth && typeof data.perMonth === "object") {
+            for (const [month, items] of Object.entries(data.perMonth)) {
+                if (!Array.isArray(items) || items.length === 0) continue;
+                nextPerMonth[month] = items.map((item) =>
+                    normalizeMoney(item as Partial<Money>)
+                );
+            }
+        }
+        const nextMonthly = Array.isArray(data.monthly)
+            ? data.monthly.map((item) =>
+                  normalizeMonthlyItem(item as Partial<MonthlyItem>)
+              )
+            : [];
+        const nextMonthlyToggles: MonthlyToggles =
+            data.monthlyToggles && typeof data.monthlyToggles === "object"
+                ? (data.monthlyToggles as MonthlyToggles)
+                : {};
+        setPerMonth(nextPerMonth);
+        setMonthlyItems(nextMonthly);
+        setMonthlyToggles(nextMonthlyToggles);
+        savePerMonth(nextPerMonth);
+        saveMonthlyItems(nextMonthly);
+        saveMonthlyToggles(nextMonthlyToggles);
+        const months = Object.keys(nextPerMonth).sort().reverse();
+        setActiveMonth(months[0] ?? currentMonthKey());
+    };
+
+    const importJson = async (file: File) => {
+        const confirmed = window.confirm(
+            "Import will overwrite current local data. Continue?"
+        );
+        if (!confirmed) return;
+        const text = await file.text();
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            window.alert("Invalid JSON file.");
+            return;
+        }
+        if (!parsed || typeof parsed !== "object") {
+            window.alert("Invalid data format.");
+            return;
+        }
+        applyImportedData(parsed as {
+            perMonth?: unknown;
+            monthly?: unknown;
+            monthlyToggles?: unknown;
+        });
+    };
 
     return (
         <div class="app">
@@ -386,6 +540,32 @@ function Index() {
                     <div class="meta tabular">
                         items: {itemsCount()} | selected: {selectedCount()}
                     </div>
+                    <button
+                        class="btn btn-compact"
+                        onMouseDown={goToPreviousMonth}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                goToPreviousMonth();
+                            }
+                        }}
+                        aria-label="Previous month"
+                    >
+                        prev
+                    </button>
+                    <button
+                        class="btn btn-compact"
+                        onMouseDown={goToNextMonth}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                goToNextMonth();
+                            }
+                        }}
+                        aria-label="Next month"
+                    >
+                        next
+                    </button>
                     <select
                         class="month-select"
                         aria-label="Month"
@@ -394,12 +574,29 @@ function Index() {
                             setActiveMonth(event.currentTarget.value)
                         }
                     >
+                        <Show when={!hasActiveMonth()}>
+                            <option value={activeMonth()} hidden>
+                                {activeMonth()} (empty)
+                            </option>
+                        </Show>
                         <For each={monthOptions()}>
                             {(month) => (
                                 <option value={month}>{month}</option>
                             )}
                         </For>
                     </select>
+                    <button
+                        class="btn btn-danger"
+                        onMouseDown={() => deleteMonth(activeMonth())}
+                        onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                                e.preventDefault();
+                                deleteMonth(activeMonth());
+                            }
+                        }}
+                    >
+                        delete month
+                    </button>
                     <button
                         class="btn btn-primary"
                         onMouseDown={addMoney}
@@ -542,6 +739,42 @@ function Index() {
                             >
                                 {exporting() ? "hide json" : "show json"}
                             </button>
+                            <button
+                                class="btn btn-quiet"
+                                onMouseDown={exportJson}
+                                onKeyDown={(e) => {
+                                    if (e.key === " " || e.key === "Enter") {
+                                        e.preventDefault();
+                                        exportJson();
+                                    }
+                                }}
+                            >
+                                export json
+                            </button>
+                            <button
+                                class="btn btn-quiet"
+                                onMouseDown={openImport}
+                                onKeyDown={(e) => {
+                                    if (e.key === " " || e.key === "Enter") {
+                                        e.preventDefault();
+                                        openImport();
+                                    }
+                                }}
+                            >
+                                import json
+                            </button>
+                            <input
+                                ref={(el) => (importInputRef = el)}
+                                type="file"
+                                accept="application/json"
+                                class="visually-hidden"
+                                onChange={(event) => {
+                                    const file = event.currentTarget.files?.[0];
+                                    if (!file) return;
+                                    void importJson(file);
+                                    event.currentTarget.value = "";
+                                }}
+                            />
                         </div>
                     </div>
                     <div class="panel-body">
